@@ -1,37 +1,16 @@
-## Welcome to GitHub Pages
+## Welcome to my "Explore and Summarize Data" Project Page!
 
-You can use the [editor on GitHub](https://github.com/mmlak-0109/Explore-and-Summarize-Data/edit/gh-pages/README.md) to maintain and preview the content for your website in Markdown files.
+I completed this project for Udacity's Data Analyst Nanodegree "Data Analysis with R" course.
 
-Whenever you commit to this repository, GitHub Pages will run [Jekyll](https://jekyllrb.com/) to rebuild the pages in your site, from the content in your Markdown files.
+In this course, I learned how to do the following things:
 
-### Markdown
+- Understand the distribution of a variable and to check for anomalies and outliers
+- Learn how to quantify and visualize individual variables within a data set by using appropriate plots such as scatter plots, histograms, bar charts, and box plots
+- Explore variables to identify the most important variables and relationships within a data set before building predictive models; calculate correlations, and investigate conditional means
+- Learn powerful methods and visualizations for examining relationships among multiple variables, such as reshaping data frames and using aesthetics like color and shape to uncover more information
 
-Markdown is a lightweight and easy-to-use syntax for styling your writing. It includes conventions for
+For this project, I used R in Rstudio to explore a data set containing financial contributions made by California residents in the 2016 Presidential election.
 
-```markdown
-Syntax highlighted code block
+Both the original `.Rmd` file and the generated `.html` file can be found by clicking the "View on GitHub" link above.
 
-# Header 1
-## Header 2
-### Header 3
-
-- Bulleted
-- List
-
-1. Numbered
-2. List
-
-**Bold** and _Italic_ and `Code` text
-
-[Link](url) and ![Image](src)
-```
-
-For more details see [GitHub Flavored Markdown](https://guides.github.com/features/mastering-markdown/).
-
-### Jekyll Themes
-
-Your Pages site will use the layout and styles from the Jekyll theme you have selected in your [repository settings](https://github.com/mmlak-0109/Explore-and-Summarize-Data/settings). The name of this theme is saved in the Jekyll `_config.yml` configuration file.
-
-### Support or Contact
-
-Having trouble with Pages? Check out our [documentation](https://help.github.com/categories/github-pages-basics/) or [contact support](https://github.com/contact) and we’ll help you sort it out.
+Enjoy!
