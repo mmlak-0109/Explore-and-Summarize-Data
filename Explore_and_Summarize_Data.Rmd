@@ -1,0 +1,1035 @@
+---
+title: "2016 Presidential Campaign Finance in California"
+author: "Matthew Miller"
+date: "February 6, 2017"
+output: html_document
+---
+
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(fig.width=18, fig.height=14, fig.path='Figs/',
+                      echo=FALSE, warning=FALSE, message=FALSE, cache = TRUE)
+```
+
+This report explores a data set containing financial contributions made by California residents to Presidential candidates in the 2016 Presidential election.
+
+```{r packages}
+# Load all of the packages that you end up using
+# in your analysis in this code chunk.
+
+# Notice that the parameter "echo" was set to FALSE for this code chunk.
+# This prevents the code from displaying in the knitted HTML output.
+# You should set echo=FALSE for all code chunks in your file.
+
+library(ggplot2)
+library(devtools)
+library(ggmap)
+library(maps)
+library(mapdata)
+library(dplyr)
+library(GGally)
+library(scales)
+library(lattice)
+library(memisc)
+library(car)
+library(reshape2)
+library(FSA)
+library(dunn.test)
+library(rcompanion)
+library(knitr)
+library(corrplot)
+```
+
+```{r Load_the_Data}
+# Load the Data
+PCF <- read.csv('2016_Presidential_Campaign_Finance-CA.csv')
+```
+
+# Univariate Plots Section
+```{r Summary}
+str(PCF)
+summary(PCF)
+```
+
+
+The data set contains 1125659 donations and 19 variables.  After looking at the variables, I have decided that most of them are not necessary to my analysis.  As a result, I will remove these variables from my data frame and then continue on with my plots.  The resulting data frame has the same number of observations but has been whittled down to only 4 variables.
+
+
+```{r Drops-Summary}
+drops <- c("cmte_id", "cand_id", "contbr_nm", "contbr_employer", "contbr_st",
+           "contbr_zip", "contb_receipt_dt", "receipt_desc", "memo_cd",
+           "memo_text", "form_tp", "file_num", "tran_id", "election_tp", "X")
+PCF <- PCF[ , !(names(PCF) %in% drops)]
+
+str(PCF)
+summary(PCF)
+```
+
+
+First I decided to look at the candidates and how many times they were donated to.
+
+
+```{r CandidatesByFrequencies}
+CandidatesByFrequencies <- PCF %>%
+  group_by(cand_nm) %>%
+  summarise(count = n(),
+            sum = sum(contb_receipt_amt),
+            meadian = median(contb_receipt_amt)) %>%
+  mutate(percent_count = round(count/sum(count) * 100, 2),
+         percent_sum = round(sum/sum(sum) *100, 2))
+```
+
+```{r Printed_CandidatesByFrequencies}
+kable(head(CandidatesByFrequencies, 10))
+```
+
+```{r Univariate_Plots}
+ggplot(PCF, aes(cand_nm)) +
+  geom_bar() +
+  scale_y_continuous(labels = comma) +
+  theme(text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+kable(head(arrange(CandidatesByFrequencies[c("cand_nm", "percent_count")],
+                   desc(percent_count)), 10), align = 'l')
+```
+
+
+As can be seen above, Hillary Clinton and Bernie Sanders received the most donations by far (getting about 49% and 36% of the total donations respectively).  This doesn't tell us anything about the kind of donations they are receiving, so I will look at that again later in the Bivariate Analysis.
+
+Next I wanted to look at counts for political parties, but since there wasn't a variable for that I had to make one.  In order to do that, I wrote a function to match each candidate to there political party and then created the graph shown below.
+
+
+```{r polParties}
+polParties <- function(x){
+    if (is.na(x)){
+      as.factor(NA)
+    } else if (x == "Bush, Jeb" | x == "Carson, Benjamin S." |
+               x == "Christie, Christopher J." |
+               x == "Cruz, Rafael Edward 'Ted'" | x == "Fiorina, Carly" |
+               x == "Gilmore, James S III" | x == "Graham, Lindsey O." |
+               x == "Huckabee, Mike" | x == "Jindal, Bobby" |
+               x == "Kasich, John R." | x == "Pataki, George E." |
+               x == "Paul, Rand" | x == "Perry, James R. (Rick)" |
+               x == "Rubio, Marco" | x == "Santorum, Richard J." |
+               x == "Trump, Donald J." | x == "Walker, Scott"){
+      as.factor("Republican")
+    } else if  (x == "Clinton, Hillary Rodham" | x == "Lessig, Lawrence" |
+                x == "O'Malley, Martin Joseph" | x == "Sanders, Bernard" |
+                x == "Webb, James Henry Jr."){
+      as.factor("Democrat")
+    } else if (x == "Johnson, Gary"){
+      as.factor("Libertarian")
+    } else if (x == "McMullin, Evan"){
+      as.factor("Independent")
+    } else if (x == "Stein, Jill"){
+      as.factor("Green")
+    } else {
+      as.factor(NA)
+    }
+}
+
+PCF$cand_party <- apply(PCF['cand_nm'], 1, polParties)
+```
+
+```{r PolPartyByFrequencies}
+PolPartyByFrequencies <- PCF %>%
+  group_by(cand_party) %>%
+  summarise(count = n(),
+            sum = sum(contb_receipt_amt),
+            meadian = median(contb_receipt_amt)) %>%
+  mutate(percent_count = round(count/sum(count) * 100, 2),
+         percent_sum = round(sum/sum(sum) *100, 2))
+```
+
+```{r Printed_PolPartyByFrequencies}
+kable(head(PolPartyByFrequencies))
+```
+
+```{r Party_Count}
+ggplot(PCF, aes(cand_party)) +
+  geom_bar() +
+  scale_y_continuous(labels = comma) +
+  theme(text = element_text(size = 20))
+
+
+kable(arrange(PolPartyByFrequencies[c("cand_party", "percent_count")],
+              desc(percent_count)), align = 'l')
+```
+
+
+Even though I saw this coming from the graph above for candidates, Democrats received the most donations overall taking in just under 85% of the total donations.
+
+
+```{r DonationAmtByFrequencies}
+DonationAmtByFrequencies <- PCF %>%
+  group_by(contb_receipt_amt) %>%
+  summarise(count = n(),
+            sum = sum(contb_receipt_amt),
+            meadian = median(contb_receipt_amt)) %>%
+  mutate(percent_count = round(count/sum(count) * 100, 2),
+         percent_sum = round(sum/sum(sum) *100, 2))
+```
+
+```{r Printed_DonationAmtByFrequencies}
+kable(head(DonationAmtByFrequencies))
+```
+
+```{r Donation_Count}
+ggplot(PCF, aes(contb_receipt_amt)) +
+  geom_histogram(bins = 82) +
+  scale_x_continuous(limits = c(0, 300), breaks = seq(0, 300, 5)) +
+  scale_y_continuous(labels = comma) +
+  theme(text = element_text(size = 20),
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+
+kable(head(arrange(DonationAmtByFrequencies
+                   [c("contb_receipt_amt", "percent_count")], 
+                   desc(percent_count)), 10), align = 'l')
+```
+
+
+The top three donation amounts are $25 and $50, and $100.  Within the top 10, most were small donations under $100 dollars with the exception of $250 for some reason.  Also, most donation amounts are divisible by five with the exceptions of $27 and $19.  I wonder why those amounts was so numerous.
+
+
+```{r Map}
+# get unique cities, create a dataframe with them alone:
+cities <- as.data.frame(unique(PCF$contbr_city))
+
+# rename the column (not necessary, just tidying things)
+colnames(cities)[1] <- 'contbr_city'
+
+# at the state to each city (to avoid confusing 'geocode')
+cities$contbr_city_state <- paste(as.character(cities$contbr_city), 
+                                  "CA", sep=", ") 
+
+# get the lat/long from google (go grab a coffee):
+# cities.new <- cbind(geocode(as.character(cities$contbr_city_state)), cities)
+
+# write the result to a file, so this doesn't need to be done again
+# then comment out this section of code
+# write.csv(cities.new, file = "California_geoLocation.csv",row.names=FALSE)
+
+
+# load the file (obviously not necessary on the first run)
+geoloc <- read.csv('California_geoLocation.csv', row.names=NULL)
+
+# fill in all cities with their lat/lon values for the original dataframe:
+nm <- c("lon", "lat")
+PCF[nm] <- lapply(nm, function(x) geoloc[[x]]
+                  [match(as.character(PCF$contbr_city),
+                         as.character(geoloc$contbr_city))])
+
+CitiesByFrequencies <- PCF %>%
+  group_by(contbr_city) %>%
+  summarise(count = n(),
+            sum = sum(contb_receipt_amt),
+            median = median(contb_receipt_amt),
+            lat = mean(lat),
+            lon = mean(lon)) %>%
+  mutate(percent_count = round(count/sum(count) * 100, 2), 
+         percent_sum = round(sum/sum(sum) *100, 2))
+```
+
+```{r Printed_CitiesByFrequencies}
+kable(head(CitiesByFrequencies, 10))
+```
+
+
+```{r}
+# subCitiesByFrequencies <- CitiesByFrequencies[1:10,]
+# subcountData <- cbind(geocode(as.character(subCitiesByFrequencies$contbr_city)), subCitiesByFrequencies)
+# CitiesByFrequencies <- cbind(geocode(as.character(CitiesByFrequencies$contbr_city)), CitiesByFrequencies)
+
+# write.table(CitiesByFrequencies, file = "CitiesByFrequencies.csv",row.names = FALSE, na = "", sep = ",")
+
+# CitiesByFrequencies <- read.csv('CitiesByFrequencies.csv')
+```
+
+```{r Cali_Map}
+california <- map_data("state", region = "california")
+ca_county <- map_data("county", region = "california")
+#CA_map <- ggplot(data = california, aes(x = long, y = lat, group = group)) +
+#  geom_polygon(colour = "black", fill = "grey") +
+#  coord_fixed(1.3) +
+#  geom_polygon(data = ca_county, fill = NA, color = "white") +
+#  geom_polygon(color = "black", fill = NA)
+
+#CA_map +
+#  geom_point(data = subcountData, aes(lon, lat, size = contb_count), color = "orange", inherit.aes = FALSE) +
+#  geom_text(data = subcountData, hjust = 0.5, vjust = -0.5, aes(lon, lat, label = contbr_city), size = 3, inherit.aes = FALSE)
+```
+
+```{r World_Map}
+world <- map_data("world")
+
+usa_map <- ggplot(data = world, aes(x = long, y = lat, group = group)) +
+  geom_polygon(colour = "black", fill = "grey") +
+  coord_fixed(1.3)
+
+usa_map +
+  geom_point(data = CitiesByFrequencies, 
+             aes(lon, lat, size = count, color = count), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-125, -60), ylim = c(20, 70)) +
+  scale_size_continuous(breaks = c(1, 10000, 20000, 40000, 60000, 80000), 
+                        labels = c("0-10,000", "10,000-20,000", "20,000-40,000", 
+                                   "40,000-60,000", "60,000-80,000", 
+                                   "80,000+")) +
+  scale_color_gradientn(colours = rainbow(6), 
+                        breaks = c(1, 10000, 20000, 40000, 60000, 80000), 
+                        labels = c("0-10,000", "10,000-20,000", "20,000-40,000", 
+                                   "40,000-60,000", "60,000-80,000", 
+                                   "80,000+")) +
+  guides(color = guide_legend(), size = guide_legend()) +
+  theme(text = element_text(size = 20))
+
+
+CA_map <- ggplot(data = california, aes(x = long, y = lat, group = group)) +
+  geom_polygon(colour = "black", fill = "grey") +
+  coord_fixed(1.3) +
+  geom_polygon(data = ca_county, fill = NA, color = "white") +
+  geom_polygon(color = "black", fill = NA)
+
+
+CA_map +
+  geom_point(data = CitiesByFrequencies, 
+             aes(lon, lat, size = count, color = count), 
+             inherit.aes = FALSE) +
+  scale_x_continuous(limits = c(-125, -114)) +
+  scale_y_continuous(limits = c(32, 42.5)) +
+  scale_size_continuous(breaks = c(1, 10000, 20000, 40000, 60000, 80000), 
+                        labels = c("0-10,000", "10,000-20,000", "20,000-40,000", 
+                                   "40,000-60,000", "60,000-80,000", 
+                                   "80,000+")) +
+  scale_color_gradientn(colours = rainbow(6), 
+                        breaks = c(1, 10000, 20000, 40000, 60000, 80000), 
+                        labels = c("0-10,000", "10,000-20,000", "20,000-40,000", 
+                                   "40,000-60,000", "60,000-80,000", 
+                                   "80,000+")) +
+  guides(color = guide_legend(), size = guide_legend()) +
+  theme(text = element_text(size = 20))
+```
+
+
+A test mapping I performed revealed some locations out side of California, so I decided to have a look at where all of the points fall by mapping them on a world map as well as a California map.
+
+After mapping all the points on the world map, all of the points outside of California can be clearly seen.  I'm assuming the donations that came from outside California came from California residents who are living out of state, but further research into who made the donations would need to be made in order to know for sure.
+
+Looking at the map of California only, There is a decent scattering of locations all over the state, but there is definitely a clustering of donations coming from the areas surrounding San Francisco, Los Angeles, and San Diego.
+
+Let's zoom in on those dense areas to get a better idea of the layout in those areas.
+
+
+```{r Cali_Map2}
+CA_map +
+  geom_point(data = CitiesByFrequencies, aes(lon, lat, size = count, color = count), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-123.25, -121), ylim = c(37, 39)) +
+  scale_size_continuous(breaks = c(1, 10000, 20000, 40000, 60000, 80000), 
+                        labels = c("0-10,000", "10,000-20,000", "20,000-40,000", 
+                                   "40,000-60,000", "60,000-80,000", 
+                                   "80,000+")) +
+  scale_color_gradientn(colours = rainbow(6), 
+                        breaks = c(1, 10000, 20000, 40000, 60000, 80000), 
+                        labels = c("0-10,000", "10,000-20,000", "20,000-40,000", 
+                                   "40,000-60,000", "60,000-80,000", 
+                                   "80,000+")) +
+  guides(color = guide_legend(), size = guide_legend()) +
+  theme(text = element_text(size = 20))
+
+
+CA_map +
+  geom_point(data = CitiesByFrequencies, aes(lon, lat, size = count, color = count), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-120, -116.5), ylim = c(32, 35)) +
+  scale_size_continuous(breaks = c(1, 10000, 20000, 40000, 60000, 80000), 
+                        labels = c("0-10,000", "10,000-20,000", "20,000-40,000", 
+                                   "40,000-60,000", "60,000-80,000", 
+                                   "80,000+")) +
+  scale_color_gradientn(colours = rainbow(6), 
+                        breaks = c(1, 10000, 20000, 40000, 60000, 80000), 
+                        labels = c("0-10,000", "10,000-20,000", "20,000-40,000", 
+                                   "40,000-60,000", "60,000-80,000", 
+                                   "80,000+")) +
+  guides(color = guide_legend(), size = guide_legend()) +
+  theme(text = element_text(size = 20))
+
+
+kable(head(arrange(CitiesByFrequencies[c("contbr_city", "percent_count")], 
+                   desc(percent_count)), 10), align = 'l')
+```
+
+
+Zooming in on these areas shows that the highest counts in these areas, and all of California, seem to be San Francisco, Los Angeles, and San Diego.  Taking a look at the table of cities by percent count confirms this.  This isn't unexpected, as they are the three largest cities in California.
+
+After location based on cities, I moved on to explore how occupation affected donations.  However, as the graph shows below, the x-axis is overcrowded and some cleaning is needed in order to make the plot readable.
+
+```{r contbr_occupation}
+ggplot(PCF, aes(contbr_occupation)) +
+  geom_bar() +
+  scale_y_continuous(limits = c(0, 216000)) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+```
+
+To clean the data I used information from the United States Census Bureau that used the North American Industry Classification System.  Using that chart I wrote a function to group the various occupations into industry groups.  However, the data is not exhaustive.  There are 25,387 unique occupations listed in the data set, and trying sort all of them into their respective categories would have taken an inordinate amount of time.  As a result I only included the top 100 occupations by count.
+
+```{r results='hide', Occ_Summary}
+summary(PCF$contbr_occupation)
+```
+
+```{r employCateg}
+employCateg <- function(x){
+    if (is.na(x)){
+      as.factor(NA)
+    } else if (x == "FARMER"){
+      as.factor("Agriculture, Forestry, Fishing and Hunting")
+    } else if (x == "DRIVER" | x == "TRUCK DRIVER"){
+      as.factor("Transportation and Warehousing")
+    } else if (x == "EDITOR"){
+      as.factor("Information")
+    } else if (x == "FINANCE" | x == "INVESTOR"){
+      as.factor("Finance and Insurance")
+    } else if (x == "REAL ESTATE" | x == "PROPERTY MANAGER" | 
+               x =="REAL ESTATE BROKER" | x == "REALTOR"){
+      as.factor("Real Estate and Rental and Leasing")
+    } else if (x == "ATTORNEY" | x == "LAWYER" | x == "PARALEGAL" | 
+               x == "SCIENTIST" | x == "IT" | x == "SOFTWARE ENGINEER" | 
+               x == "SOFTWARE DEVELOPER" | x == "WEB DEVELOPER" | 
+               x == "PROGRAMMER" | x == "ANALYST" | x == "RESEARCHER" | 
+               x == "GRAPHIC DESIGNER" | x == "CIVIL ENGINEER" | 
+               x == "ENGINEER" | x == "ARCHITECT" | x == "BOOKKEEPER" | 
+               x == "ACCOUNTANT" | x == "CONSULTANT" | x == "CPA" | 
+               x == "CFO" | x == "HUMAN RESOURCES" | x == "MARKETING" | 
+               x == "SALES" | x == "DESIGNER" | x == "PHOTOGRAPHER" | 
+               x == "CONTRACTOR"){
+      as.factor("Professional, Scientific, and Technical Services")
+    } else if (x == "MANAGER" | x == "BUSINESS OWNER" | 
+               x == "SMALL BUSINESS OWNER" | x == "MANAGEMENT" | 
+               x == "CEO" | x == "PRESIDENT" | x == "EXECUTIVE" | 
+               x == "VICE PRESIDENT" | x == "OWNER"){
+      as.factor("Management of Companies and Enterprises")
+    } else if (x == "OFFICE MANAGER" | x == "PRODUCT MANAGER" | 
+               x == "EXECUTIVE ASSISTANT" | x == "ADMINISTRATIVE ASSISTANT" | 
+               x == "ADMINISTRATOR" | x == "PROGRAM MANAGER" | 
+               x == "PROJECT MANAGER"){
+      as.factor("Administrative and Support and Waste Management and 
+                Remediation Services")
+    } else if (x == "TEACHER" | x == "PROFESSOR" | x == "EDUCATOR" | 
+               x == "SUBSTITUTE TEACHER" | x == "INSTRUCTOR" | 
+               x == "COLLEGE PROFESSOR" | x == "LIBRARIAN"){
+      as.factor("Educational Services")
+    } else if (x == "PHYSICIAN" | x == "PSYCHOLOGIST" | x == "PSYCHOTHERAPIST" | 
+               x == "MD" | x == "NURSE PRACTITIONER" | x == "THERAPIST" | 
+               x == "NURSE" | x == "RN" | x == "REGISTERED NURSE" | 
+               x == "SOCIAL WORKER" | x == "DENTIST" | x == "PHARMACIST" | 
+               x == "CAREGIVER"){
+      as.factor("Health Care and Social Assistance")
+    } else if (x == "MUSICIAN" |x == "ACTOR" | x == "PRODUCER" | x == "AUTHOR" | 
+               x == "ACTRESS" | x == "EXECUTIVE DIRECTOR" | x == "FILMMAKER" | 
+               x == "CREATIVE DIRECTOR" | x == "WRITER" | x == "ARTIST"){
+      as.factor("Arts, Entertainment, and Recreation")
+    } else if (x == "RETIRED"){
+      as.factor("Retired")
+    } else if (x == "NOT EMPLOYED" | x == "DISABLED"){
+      as.factor("Unemployed")
+    } else if (x == "HOMEMAKER"){
+      as.factor("Homemaker")
+    } else if (x == "STUDENT" | x == "GRADUATE STUDENT"){
+      as.factor("Student")
+    } else {
+      as.factor(NA)
+    }
+}
+
+PCF$contbr_occup_categ <- apply(PCF['contbr_occupation'], 1, employCateg)
+```
+
+```{r OccupationCategByFrequencies}
+OccupationCategByFrequencies <- subset(PCF, !is.na(contbr_occup_categ)) %>%
+  group_by(contbr_occup_categ) %>%
+  summarise(count = n(),
+            sum = sum(contb_receipt_amt),
+            meadian = median(contb_receipt_amt)) %>%
+  mutate(percent_count = round(count/sum(count) * 100, 2), 
+         percent_sum = round(sum/sum(sum) *100, 2))
+```
+
+```{r Printed_OccupationCategByFrequencies}
+kable(head(OccupationCategByFrequencies, 10))
+```
+
+```{r fig.width=22, fig.height=18, Occupation_Count}
+ggplot(subset(PCF, !is.na(contbr_occup_categ)), aes(contbr_occup_categ)) +
+  geom_bar() +
+  scale_y_continuous(labels = comma) +
+  theme(text = element_text(size = 20), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+
+kable(arrange(OccupationCategByFrequencies
+              [c("contbr_occup_categ", "percent_count")], 
+              desc(percent_count)), align = 'l')
+```
+
+Looking at the graph it's easy to see that retirees were by far the most active contributors, followed by people in the "Professional, Scientific, and Technical Services" industry, but the most surprising was "Unemployed" people coming in at 3rd place (not that far behind 2nd place actually).  I would assume unemployed people wouldn't have the extra cash lying around to make donations, however the data seems to show otherwise.
+
+
+# Univariate Analysis
+
+### What is the structure of your dataset?
+
+There are 1,125,659 different donations made with 19 different variables.  Most of the 19 variables, however, were unimportant to my analysis.  As a result, I dropped most of the variables.  This left with with only 4 variables to work with at the start (cand_nm, contbr_city,contbr_occupation, and contb_receipt_amt).
+
+### What is/are the main feature(s) of interest in your dataset?
+
+The main features of interest are donations in terms of the number and amount in dollars, the candidates, the contributors in terms of their occupation, and the location of donations (cand_nm, contb_receipt_amt, contbr_occupation, contbr_city).  I want to see how they all interact with each other and which features influenced the count and mount of donations candidates received.
+
+### Did you create any new variables from existing variables in the dataset?
+
+Yes, I created a variable for political parties (cand_party) and for occupation categories (contbr_occup_categ).  To reiterate what I stated above with the plots, for political parties I wrote a function to match each candidate to there political party.  For occupational categories I cleaned the data by using information from the United States Census Bureau that used the North American Industry Classification System.  Using that chart I wrote a function to group the various occupations into industry groups.  However, the data is not exhaustive.  There are 25,387 unique occupations listed in the data set, and trying sort all of them into their respective categories would have taken an inordinate amount of time.  As a result I only included the top 100 occupations that were listed in the summary for "contbr_occupation"by grouping the contributors occupations by major industry.
+
+### Of the features you investigated, were there any unusual distributions? Did you perform any operations on the data to tidy, adjust, or change the form of the data? If so, why did you do this?
+
+I created a variety of new tables for each variable to get counts of the donations, sums of the donations, median donations, and percentages for counts and sums.  I created these table for the purposes of getting these extra statistics on the variables and to help with making certain plots (particularly for plotting cities on a map to show the geographical distribution of the donations).
+
+
+# Bivariate Plots Section
+```{r Cand_Donation}
+ggplot(CandidatesByFrequencies, aes(cand_nm, sum)) +
+  geom_col() +
+  scale_y_continuous(limits = c(0, NA), labels = comma) +
+  theme(text = element_text(size = 20), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+
+kable(head(arrange(CandidatesByFrequencies[c("cand_nm", "percent_sum")], 
+                   desc(percent_sum)), 10), align = 'l')
+
+
+ggplot(PCF, aes(cand_nm, contb_receipt_amt)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, NA), labels = comma) +
+  theme(text = element_text(size = 20), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+```
+
+It's a bit hard to see all of the IQR ranges, so let's zoom in a bit to get a better look.
+
+```{r Cand_Donation_cont}
+ggplot(PCF, aes(cand_nm, contb_receipt_amt)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 200)) +
+  theme(text = element_text(size = 20), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+```
+
+When it comes to total donations in dollars, Hillary Clinton is the clear winner with about 61% of donations going to her.
+
+There seems to be quit a variety of IQRs between all the candidates.  Interestingly, most candidates have median donations at $25, and $50, and $100 (which are the three most common donation amounts).  Also, most have relatively long IQRs, and a few have quit long IQRs and high median donation amounts.  A full breakdown of the numbers are below.
+
+
+```{r _Cand_Summary}
+by(PCF$contb_receipt_amt, PCF$cand_nm, summary)
+```
+
+
+Looking at donation amounts by candidates, while Hillary Clinton and Bernie Sanders were again the top two, they both had one of the lowest median donations at $25 and $27 respectively.  This helps solve the mystery of $27 being one of the most common donation amount. Since Bernie had the second most donations by count, it makes sense that his median donation would be one of the most common.  Why $27 was such a popular amount to give Bernie remains a mystery however.
+
+
+```{r Party_Donation}
+ggplot(PolPartyByFrequencies, aes(cand_party, sum)) +
+  geom_col() +
+  scale_y_continuous(limits = c(0, NA), labels = comma) +
+  theme(text = element_text(size = 20))
+
+
+kable(arrange(PolPartyByFrequencies[c("cand_party", "percent_sum")], 
+              desc(percent_sum)), align = 'l')
+
+
+ggplot(PCF, aes(cand_party, contb_receipt_amt)) +
+  geom_boxplot() +
+  scale_y_continuous(limits = c(0, NA), labels = comma) +
+  theme(text = element_text(size = 20))
+```
+
+We can see that Democrats and Republicans received some of the highest donation amounts, but we can't really make out the IQR ranges.  Let's zoom in to get a closer look.
+
+```{r Party_Donation_cont}
+ggplot(PCF, aes(cand_party, contb_receipt_amt)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 300)) +
+  theme(text = element_text(size = 20))
+```
+
+
+```{r Party_Summary}
+by(PCF$contb_receipt_amt, PCF$cand_party, summary)
+```
+
+
+The results for political party are definitely not a surprise given how much more money Hillary and Bernie received individually (especially Hillary), but they did have a smaller percentage of total donations in dollars than by count.  However, while Democrats gave the most overall they seem to have the lowest median donation out of all other parties.  Does this mean that Democrats tend to be poorer?  That they have less money to spare than the others?  More information would be needed to answer these questions.  Also, the IQRs of the other parties tend to come at more regular amounts like $25, $50, and $100.  Perhaps the Democrats were just more likely to use the "Other" amount box instead of choosing the preset suggested donation amounts that are often given.
+
+Regardless, in order to find out if there is a statistically significant difference between the political parties, I will conduct a Kruskal-Wallis rank sum test.
+
+
+```{r kruskal.test_Party}
+kruskal.test(contb_receipt_amt ~ cand_party, PCF)
+```
+
+
+The results above show that, with a p-value well below 0.05, there is indeed a statistical significance between the political parties and the donation amounts received.
+
+However, this doesn't tell us much about which parties differ from each other, so I will run a post-hoc analysis to determine this.
+
+
+```{r candPartyTest}
+PCF$cand_party <- factor(PCF$cand_party)
+
+candPartyTest <- dunnTest(contb_receipt_amt ~ cand_party, data = PCF, 
+                          method = "bh")
+```
+
+
+```{r cldList_candPartyTest}
+candPartyTest <- candPartyTest$res
+
+kable(cldList(comparison = candPartyTest$Comparison, 
+              p.value = candPartyTest$P.adj, threshold = 0.05), 
+      caption = "(NOTE: Groups sharing the same letter are not significantly 
+      different.)")
+```
+
+
+After running the post-hoc analysis using the Dunn Test, it is easy to see that almost all of the parties are significantly different from each other with the exception of Independents having no statistical significance from both Libertarians and Greens.
+
+
+```{r City_Donation}
+CA_map +
+  geom_point(data = CitiesByFrequencies, aes(lon, lat, size = sum, color = sum), 
+             inherit.aes = FALSE) +
+  scale_x_continuous(limits = c(-125, -114)) +
+  scale_y_continuous(limits = c(32, 42.5)) +
+  scale_size_continuous(breaks = c(0, 1250000, 2500000, 5000000, 10000000, 
+                                   15000000), 
+                        labels = c("0-1,250,000", "1,250,000-2,500,000", 
+                                   "2,500,000-5,000,000", 
+                                   "5,000,000-10,000,000", 
+                                   "10,000,000-15,000,000", "15,000,000+")) +
+  scale_color_gradientn(colours = rainbow(6), 
+                        breaks = c(0, 1250000, 2500000, 5000000, 10000000, 
+                                   15000000), 
+                        labels = c("0-1,250,000", "1,250,000-2,500,000", 
+                                   "2,500,000-5,000,000", 
+                                   "5,000,000-10,000,000", 
+                                   "10,000,000-15,000,000", "15,000,000+")) +
+  guides(color = guide_legend(), size = guide_legend()) +
+  theme(text = element_text(size = 20))
+
+
+CA_map +
+  geom_point(data = CitiesByFrequencies, aes(lon, lat, size = sum, color = sum), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-123.25, -121), ylim = c(37, 39)) +
+  scale_size_continuous(breaks = c(0, 1250000, 2500000, 5000000, 10000000, 
+                                   15000000), 
+                        labels = c("0-1,250,000", "1,250,000-2,500,000", 
+                                   "2,500,000-5,000,000", 
+                                   "5,000,000-10,000,000", 
+                                   "10,000,000-15,000,000", "15,000,000+")) +
+  scale_color_gradientn(colours = rainbow(6), 
+                        breaks = c(0, 1250000, 2500000, 5000000, 10000000, 
+                                   15000000), 
+                        labels = c("0-1,250,000", "1,250,000-2,500,000", 
+                                   "2,500,000-5,000,000", 
+                                   "5,000,000-10,000,000", 
+                                   "10,000,000-15,000,000", "15,000,000+")) +
+  guides(color = guide_legend(), size = guide_legend()) +
+  theme(text = element_text(size = 20))
+
+
+CA_map +
+  geom_point(data = CitiesByFrequencies, aes(lon, lat, size = sum, color = sum), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-120, -116.5), ylim = c(32, 35)) +
+  scale_size_continuous(breaks = c(0, 1250000, 2500000, 5000000, 10000000, 
+                                   15000000), 
+                        labels = c("0-1,250,000", "1,250,000-2,500,000", 
+                                   "2,500,000-5,000,000", 
+                                   "5,000,000-10,000,000", 
+                                   "10,000,000-15,000,000", "15,000,000+")) +
+  scale_color_gradientn(colours = rainbow(6), 
+                        breaks = c(0, 1250000, 2500000, 5000000, 10000000, 
+                                   15000000), 
+                        labels = c("0-1,250,000", "1,250,000-2,500,000", 
+                                   "2,500,000-5,000,000", 
+                                   "5,000,000-10,000,000", 
+                                   "10,000,000-15,000,000", "15,000,000+")) +
+  guides(color = guide_legend(), size = guide_legend()) +
+  theme(text = element_text(size = 20))
+
+
+kable(head(arrange(CitiesByFrequencies[c("contbr_city", "percent_sum")], 
+                   desc(percent_sum)), 10), align = 'l')
+```
+
+
+In general, these maps based on location and contribution totals in dollars mirror the maps from earlier based on location and contribution totals by count.  However, there are some exceptions.  When looking at the raw numbers in the table, Beverly Hills and Palo Alto have moved up on the list for total contributions in dollars, I assume, because of these areas affluence.
+
+Like I did above with political parties, in order to find out if there is a statistically significant difference between the political parties, I will conduct a Kruskal-Wallis rank sum test.
+
+
+```{r kruskal.test_City}
+kruskal.test(contb_receipt_amt ~ contbr_city, PCF)
+```
+
+
+The results above show that, with a p-value well below 0.05, there is indeed a statistical significance between cities and the donation amounts given.
+
+
+```{r fig.width=24, fig.height=20, Occupation_Donations}
+ggplot(subset(OccupationCategByFrequencies, !is.na(contbr_occup_categ)), 
+       aes(contbr_occup_categ, sum)) +
+  geom_col() +
+  scale_y_continuous(limits = c(0, NA), labels = comma) +
+  theme(text = element_text(size = 20), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+
+kable(arrange(OccupationCategByFrequencies
+              [c("contbr_occup_categ", "percent_sum")], 
+              desc(percent_sum)), align = 'l')
+
+ggplot(subset(PCF, !is.na(contbr_occup_categ)), 
+       aes(contbr_occup_categ, contb_receipt_amt)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 500)) +
+  theme(text = element_text(size = 20), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+```
+
+
+The only obvious changes between contribution amounts by occupation and contribution count by occupation are with increases in seven of the categories (with the biggest in the "Professional, Scientific, and Technical Services" and "Management of Companies and Enterprises" categories) and decreases three categories (with the biggest being the "Unemployed" category).  Retirees, and "Professional, Scientific, and Technical Services" and "Management of Companies and Enterprises" gave the most as groups.
+
+
+```{r kruskal.test_Occ}
+kruskal.test(contb_receipt_amt ~ contbr_occup_categ, PCF)
+```
+
+
+The results above show that, with a p-value well below 0.05, there is indeed a statistical significance between cities and the donation amounts given.
+
+
+```{r occupTest}
+PCF$contbr_occup_categ <- factor(PCF$contbr_occup_categ)
+
+occupTest <- dunnTest(contb_receipt_amt ~ contbr_occup_categ, data = PCF, 
+                      method = "bh")
+```
+
+```{r cldList_occupTest}
+occupTest <- occupTest$res
+
+kable(cldList(comparison = occupTest$Comparison, 
+              p.value = occupTest$P.adj, threshold = 0.05), 
+      caption = "(NOTE: Groups sharing the same letter are not significantly 
+      different.)")
+```
+
+
+# Bivariate Analysis
+ 
+### Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?
+
+When looking at the individual candidates there doesn't seem to be any general relationship at all, but once grouped into political parties there seems to be relationship between belonging to a party (especially the two major parties), and the amount of donations in dollars.  Both the major parties (Democrats and Republicans) had the highest donation amounts, with Democrats being the clear winner.  However, even though Democrats had the highest donation total overall, they also had the lowest mean donation amount at $27.  Not only did the most people donate the most money to Democrats, but they did so at relatively modest amounts per individual.
+
+In addition, there seems to be a relationship between cities and the amount of donations given, with big cities (specifically San Francisco, Los Angeles, and San Diego) and the immediate surrounding area giving a higher amount of money than the countryside.
+
+Finally, looking at donations by occupation showed that a few groups (specifically retirees, "Professional, Scientific, and Technical Services" and "Management of Companies and Enterprises) gave in amounts well above all the other groups.
+
+### What was the strongest relationship you found?
+
+From what I can see, no single relationship was stronger than the others.  After running a Kruskal-Wallis rank sum test on all of the relationships, all three variables (political parties, location by city, and occupation) showed strong relationships to donations (with p-values < 2.2e-16) with certain political parties, cities, and occupations receiving and giving far more donations (in both count and sums) than the others.
+
+
+# Multivariate Plots Section
+
+```{r fig.width=30, fig.height=20, Multivariate_Plots}
+ggplot(subset(PCF, !is.na(contbr_occup_categ)), 
+       aes(contbr_occup_categ, contb_receipt_amt)) +
+  geom_col(aes(fill = contbr_occup_categ), 
+           position = "dodge", show.legend = FALSE) +
+  scale_y_continuous(limits = c(0, NA), labels = comma) +
+  theme(text = element_text(size = 20), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  facet_wrap(~cand_nm, ncol = 4)
+```
+
+
+Hmm, this graph seems a bit convoluted with all 25 candidates and 15 occupation categories together in one graph.  Probably best to take a look at this by political party instead.
+
+
+```{r OccupationCategByFrequencies2}
+OccupationCategByFrequencies2 <- PCF %>%
+  group_by(contbr_occup_categ, cand_nm, cand_party) %>%
+  summarise(count = n(),
+            sum = sum(contb_receipt_amt),
+            meadian = median(contb_receipt_amt))
+```
+
+```{r Printed_OccupationCategByFrequencies2}
+kable(head(OccupationCategByFrequencies2, 10))
+```
+
+```{r fig.width=22, Occ_Cand_Party}
+ggplot(subset(OccupationCategByFrequencies2, !is.na(contbr_occup_categ)), 
+       aes(cand_party, sum)) +
+  geom_col(aes(fill = contbr_occup_categ), position = "dodge") +
+  scale_y_continuous(limits = c(0, NA), labels = comma) +
+  theme(text = element_text(size = 20))
+```
+
+With Democrats getting so much more money than everyone else, it's hard to see the distributions of the rest of the parties.  Let's zoom in to get a better look.
+
+```{r fig.width=20, Occ_Cand_Party_cont}
+ggplot(subset(OccupationCategByFrequencies2, !is.na(contbr_occup_categ)), 
+       aes(cand_party, sum)) +
+  geom_col(aes(fill = contbr_occup_categ), position = "dodge") +
+  coord_cartesian(ylim = c(0, 3200000)) +
+  scale_y_continuous(labels = comma) +
+  theme(text = element_text(size = 20))
+
+
+ggplot(subset(PCF, subset = !is.na(contbr_occup_categ) & !is.na(cand_party)), 
+       aes(cand_party, contb_receipt_amt)) +
+  geom_boxplot(aes(color = contbr_occup_categ)) +
+  scale_y_continuous(limits = c(0, NA), labels = comma) +
+  theme(text = element_text(size = 20))
+```
+
+With all the high value outliers it's hard to see the IQRs of all the parties.  Let's zoom in to get a better look.
+
+```{r fig.width=20, Occ_Cand_Party_cont2}
+ggplot(subset(PCF, subset = !is.na(contbr_occup_categ) & !is.na(cand_party)), 
+       aes(cand_party, contb_receipt_amt)) +
+  geom_boxplot(aes(color = contbr_occup_categ)) +
+  coord_cartesian(ylim = c(0, 400)) +
+  theme(text = element_text(size = 20))
+```
+
+For these plots I decided to look at political parties and how much money was given to each party by occupation.  I decided to look at donations in two different ways, first by the sum donations and second by the individual donation amounts.  From the plots you can see that Democrat's received more donations by sum in every occupation except "Agriculture, Forestry, Fishing and Hunting" (Republicans received more).  In terms of donation amounts, Democrats had the most consistent median value across all occupations.  The further right on the plot of political parties the more the median values vary (with Independents seeming to vary the most widely).  Perhaps this is due to the number of people who donated being lower for these parties.
+
+```{r CitiesByFrequencies2}
+CitiesByFrequencies2 <- PCF %>%
+  group_by(contbr_city, cand_party) %>%
+  summarise(count = n(),
+            sum = sum(contb_receipt_amt),
+            median = median(contb_receipt_amt),
+            lat = mean(lat),
+            lon = mean(lon))
+```
+
+```{r Printed_CitiesByFrequencies2}
+kable(head(CitiesByFrequencies2, 10))
+```
+
+```{r Cities_Cand}
+CA_map +
+  geom_point(data = CitiesByFrequencies2, 
+             aes(lon, lat, size = sum, color = cand_party), 
+             inherit.aes = FALSE) +
+  scale_x_continuous(limits = c(-125, -114)) +
+  scale_y_continuous(limits = c(32, 42.5)) + 
+  scale_size_continuous(breaks = c(0, 2500000, 5000000, 7500000, 10000000, 
+                                   12500000), 
+                        labels = c("0-2,500,000", "2,500,000-5,000,000", 
+                                   "5,000,000-7,500,000", "7,500,000-10,000,000",
+                                   "10,000,000-12,500,000", "12,500,000+")) +
+  scale_color_brewer(type = 'div') +
+  theme(text = element_text(size = 20))
+  
+
+CA_map +
+  geom_point(data = CitiesByFrequencies2, 
+             aes(lon, lat, size = sum, color = cand_party), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-123.25, -121), ylim = c(37, 39)) +
+  scale_size_continuous(breaks = c(0, 2500000, 5000000, 7500000, 10000000, 
+                                   12500000), 
+                        labels = c("0-2,500,000", "2,500,000-5,000,000", 
+                                   "5,000,000-7,500,000", "7,500,000-10,000,000",
+                                   "10,000,000-12,500,000", "12,500,000+")) +
+  scale_color_brewer(type = 'div') +
+  theme(text = element_text(size = 20))
+
+
+CA_map +
+  geom_point(data = CitiesByFrequencies2, 
+             aes(lon, lat, size = sum, color = cand_party), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-120, -116.5), ylim = c(32, 35)) +
+  scale_size_continuous(breaks = c(0, 2500000, 5000000, 7500000, 10000000, 
+                                   12500000), 
+                        labels = c("0-2,500,000", "2,500,000-5,000,000", 
+                                   "5,000,000-7,500,000", "7,500,000-10,000,000",
+                                   "10,000,000-12,500,000", "12,500,000+")) +
+  scale_color_brewer(type = 'div') +
+  theme(text = element_text(size = 20))
+```
+
+Looking at these maps, it seems that while some towns where Democratic donors dominated can be seen spread throughout California, it seems like a majority of them are concentrated in and around major cities.  The other parties (Republicans especially) are much more spread out across California.  In the cities, Democrats had a clear dominance in terms of the amount of money donated.
+
+```{r CitiesByFrequencies3}
+CitiesByFrequencies3 <- subset(PCF, !is.na(contbr_occup_categ)) %>%
+  group_by(contbr_city, contbr_occup_categ) %>%
+  summarise(count = n(),
+            sum = sum(contb_receipt_amt),
+            median = median(contb_receipt_amt),
+            lat = mean(lat),
+            lon = mean(lon))
+```
+
+```{r Printed_CitiesByFrequencies3}
+kable(head(CitiesByFrequencies3, 10))
+```
+
+```{r fig.width=20, Cities_Occ}
+CA_map +
+  geom_point(data = CitiesByFrequencies3, 
+             aes(lon, lat, size = sum, 
+                 color = contbr_occup_categ), inherit.aes = FALSE) +
+  scale_x_continuous(limits = c(-125, -114)) +
+  scale_y_continuous(limits = c(32, 42.5)) +
+  scale_size_continuous(breaks = c(1, 1000000, 2000000, 3000000), 
+                        labels = c("0-1,000,000", "1,000,000-2,000,000", 
+                                   "2,000,000-3,000,000", "3,000,000+")) +
+  theme(text = element_text(size = 20))
+  
+
+CA_map +
+  geom_point(data = CitiesByFrequencies3, 
+             aes(lon, lat, size = sum, color = contbr_occup_categ), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-123.25, -121), ylim = c(37, 39)) +
+  scale_size_continuous(breaks = c(1, 1000000, 2000000, 3000000), 
+                        labels = c("0-1,000,000", "1,000,000-2,000,000", 
+                                   "2,000,000-3,000,000", "3,000,000+")) +
+  theme(text = element_text(size = 20))
+
+
+CA_map +
+  geom_point(data = CitiesByFrequencies3, 
+             aes(lon, lat, size = sum, color = contbr_occup_categ), 
+             inherit.aes = FALSE) +
+  coord_cartesian(xlim = c(-120, -116.5), ylim = c(32, 35)) +
+  scale_size_continuous(breaks = c(1, 1000000, 2000000, 3000000), 
+                        labels = c("0-1,000,000", "1,000,000-2,000,000", 
+                                   "2,000,000-3,000,000", "3,000,000+")) +
+  theme(text = element_text(size = 20))
+```
+
+From what I can see, it seems that there are a wider variety of jobs clustered around the cities.  The further out into the countryside you go, "Educational Services" and "Agriculture, Forestry, Fishing and Hunting" jobs seem to dominate in terms of donations.
+
+# Multivariate Analysis
+
+### Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?
+
+Democrat's received more donations by sum in every occupation except "Agriculture, Forestry, Fishing and Hunting" (Republicans received more).  In terms of donation amounts, Democrats had the most consistent median value across all occupations at around $27.  The further left on the plot the political party the more the median values vary (with Independents seeming to vary the most widely).  Perhaps this is due to the number of people who donated being lower for these parties.
+
+Democratic donors are less spread out and are concentrated in and around major cities.  The other parties (Republicans especially) are much more spread out across California.  In the cities, Democrats had a clear dominance in terms of the amount of money donated.
+
+It can be hard to distinguish between some of the colors for the occupations, but certain occupations seem to be clustered in various regions, such as a clustering of the occupations "Student", "Real Estate and Rental and Leasing", and "Homemaker" in and around Los Angeles (likely due to a high volume of universities, real estate opportunities, and and families in this area), and a clustering of the occupation category "Agriculture, Forestry, Fishing, and Hunting" down the center of California (which is where a lot of agriculture is done in the Central Valley).
+
+------
+
+# Final Plots and Summary
+
+### Plot One
+```{r Plot_One}
+ggplot(PCF, aes(cand_party)) +
+  geom_bar() +
+  theme(text = element_text(size = 20)) +
+  scale_y_continuous(labels = comma) +
+  xlab("Political Parties") +
+  ylab("Count") +
+  ggtitle("Count by Political Parties")
+```
+
+
+### Description One
+
+Looking at the total donations for political parties, the plot shows that Democrats received the most donations by far than any other political party.
+
+### Plot Two
+```{r fig.width=26, fig.height=20, Plot_Two}
+ggplot(subset(PCF, !is.na(contbr_occup_categ)), 
+       aes(contbr_occup_categ, contb_receipt_amt)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 150)) +
+  theme(text = element_text(size = 21), 
+        axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  xlab("Contributors Occupation by Industry") +
+  ylab("Donation Amounts in Dollars") +
+  ggtitle("Donation Amounts by Occupation")
+```
+
+### Description Two
+
+Median donations are fairly uniform across occupations with most being in between $25 and $50.
+
+### Plot Three
+```{r Plot_Three}
+CA_map +
+  geom_point(data = CitiesByFrequencies2, 
+             aes(lon, lat, size = sum, color = cand_party), 
+             inherit.aes = FALSE) +
+  scale_x_continuous(limits = c(-125, -114)) +
+  scale_y_continuous(limits = c(32, 42.5)) +
+  scale_color_brewer(name = "Political Parties", type = 'div') +
+  theme(text = element_text(size = 20)) +
+  xlab("Longitude") +
+  ylab("Latitude") +
+  scale_size_continuous(name = "Donation Amounts (Dollars)", 
+                        breaks = c(0, 2500000, 5000000, 7500000, 10000000, 
+                                   12500000), 
+                        labels = c("0-2,500,000", "2,500,000-5,000,000", 
+                                   "5,000,000-7,500,000", "7,500,000-10,000,000",
+                                   "10,000,000-12,500,000", "12,500,000+")) +
+  ggtitle("Cities by Political Parties and Donation Amounts")
+```
+
+### Description Three
+
+These plots show the distribution of donations made to the various political parties by city.  While Democrat's may have given more money overall, most of that came from larger cities.  The other parties (Republicans especially) are much more spread out.
+
+------
+
+# Reflection
+
+This report explores a data set containing financial contributions made by California residents to Presidential candidates in the 2016 Presidential election.  While the data set contained 19 variables I whittled down to only the 4 variables I was I thought were useful to analyze.
+
+In general, this analysis seems to confirm a lot of my preconceived notions about the political landscape in California.  After running the analysis, the numbers show that California residents overall, and especially those in bigger cities, lean Liberal and vote for and support Democrats.  The Democratic Party beat the other parties in all the aspects I looked at.  Overall, they had the most people donate to them and the most money donated to them, and when broken down by occupation they won the support of every occupational category across the board in both count and dollar amount (with the exception of the "Agriculture, Forestry, Fishing, and Hunting" category).  With all the surprises in this election, however, it would be interesting to run another analysis on past elections and see how well the trends from this election hold.
+
+There are some limitations in my analysis when it comes to the my analysis of occupations.  As I mentioned briefly earlier in my analysis, there are 25,387 unique occupations listed in the data set, and trying sort all of them into their respective categories would have taken an inordinate amount of time.  As a result I only included the top 100 occupations.  If I had included all of the occupations, the numbers might be a bit different.  Perhaps the remaining donations would have gone to Republicans of other candidates and the Democrats might not have had quit the same dominance across the board.  Then again, perhaps nothing significant would have happened.  However, because of this limitation the results for donations by occupation should be taken with a grain of salt.
+
+------
+
+# Citations
+
+- https://stackoverflow.com/questions/1330989/rotating-and-spacing-axis-labels-in-ggplot2
+- https://uchicagoconsulting.wordpress.com/tag/r-ggplot2-maps-visualization/
+- http://blog.revolutionanalytics.com/2009/11/choropleth-challenge-result.html
+- https://discussions.udacity.com/t/how-to-make-new-categories/175600
+- http://www.census.gov/cgi-bin/sssd/naics/naicsrch?chart=2012
+- http://www.census.gov/eos/www/naics/2012NAICS/2012_Definition_File.pdf
+- https://www.bls.gov/emp/ep_table_201.htm
+- https://discussions.udacity.com/t/x-axis-labels-overcrowding-and-plotting-on-a-map/206193/16
+- http://stackoverflow.com/questions/30060000/how-to-combine-scales-for-colour-and-size-into-one-legend
+- http://www.sthda.com/english/wiki/ggplot2-colors-how-to-change-colors-automatically-and-manually
+- http://rcompanion.org/handbook/F_08.html
+- https://www.r-bloggers.com/multiple-legends-for-the-same-aesthetic-2/
+- http://www.cookbook-r.com/Graphs/Legends_(ggplot2)/
+- https://stackoverflow.com/questions/29549731/dplyr-finding-percentage-in-a-sub-group-using-group-by-and-summarise#29549927
+- http://www.ats.ucla.edu/stat/mult_pkg/whatstat/
+- http://kbroman.org/knitr_knutshell/pages/Rmarkdown.html
+- https://sachsmc.github.io/knit-git-markr-guide/knitr/knit.html
